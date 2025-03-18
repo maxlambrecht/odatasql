@@ -1,8 +1,9 @@
 package tests
 
 import (
-	"github.com/maxlambrecht/odatasql"
 	"testing"
+
+	"github.com/maxlambrecht/odatasql"
 )
 
 func TestConvert(t *testing.T) {

@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	"github.com/maxlambrecht/odatasql"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConvert(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		input    string
@@ -14,17 +17,12 @@ func TestConvert(t *testing.T) {
 		wantErr  bool
 	}{
 		// --- Basic Comparisons ---
-		{"Basic eq", "firstName eq 'Bob'", "first_name = 'Bob'", false},
+		{"Basic eq", "name eq 'Bob'", "name = 'Bob'", false},
 		{"Basic ne", "status ne 'inactive'", "status != 'inactive'", false},
 		{"Basic gt", "age gt 18", "age > 18", false},
 		{"Basic ge", "height ge 170", "height >= 170", false},
 		{"Basic lt", "score lt 50", "score < 50", false},
 		{"Basic le", "price le 99.99", "price <= 99.99", false},
-
-		// --- Case Sensitivity Tests ---
-		{"Case insensitive EQ", "name EQ 'Bob'", "name = 'Bob'", false},
-		{"Case insensitive Ne", "status Ne 'inactive'", "status != 'inactive'", false},
-		{"Case insensitive Gt", "age Gt 18", "age > 18", false},
 
 		// --- Logical Operators ---
 		{"AND operator", "age gt 18 and status eq 'active'", "age > 18 AND status = 'active'", false},
@@ -69,6 +67,13 @@ func TestConvert(t *testing.T) {
 		{"IN combined with AND", "color in ('red', 'blue') and status eq 'active'", "color IN ('red', 'blue') AND status = 'active'", false},
 		{"IN combined with OR", "color in ('red', 'blue') or status eq 'active'", "color IN ('red', 'blue') OR status = 'active'", false},
 		{"IN with NOT", "not color in ('red', 'blue')", "NOT color IN ('red', 'blue')", false},
+		{"Double NOT", "not not name eq 'Alice'", "NOT (NOT name = 'Alice')", false},
+		{"Triple NOT", "not not not name eq 'Alice'", "NOT (NOT (NOT name = 'Alice'))", false},
+
+		// --- Case Sensitivity Tests ---
+		{"Case insensitive EQ", "name EQ 'Bob'", "name = 'Bob'", false},
+		{"Case insensitive Ne", "status Ne 'inactive'", "status != 'inactive'", false},
+		{"Case insensitive Gt", "age Gt 18", "age > 18", false},
 
 		// --- Error Cases ---
 		{"Invalid operator", "name xx 'Bob'", "", true},
@@ -78,18 +83,52 @@ func TestConvert(t *testing.T) {
 		{"Malformed NOT", "not", "", true},
 		{"Empty input", "", "", false},
 		{"Leading OR", "or age gt 30", "", true},
-	}
 
+		// --- SQL Injection Tests ---
+		{"Injection - Boolean as Field", "true eq false", "", true},
+		{"Injection - Numeric as Field", "42 eq 42", "", true},
+		{"Injection - NULL as Field", "null eq null", "", true},
+		{"Injection - Boolean Comparison with Field", "status eq true eq false", "", true},
+
+		{"Injection - Empty Parentheses", "()", "", true},
+		{"Injection - Parentheses Around Literal", "(42) eq 42", "", true},
+		{"Injection - Nested Parentheses with Literal", "((true)) eq false", "", true},
+		{"Injection - Unmatched Opening Parenthesis", "(name eq 'Alice'", "", true},
+		{"Injection - Unmatched Closing Parenthesis", "name eq 'Alice')", "", true},
+
+		{"Injection - SQL Comment Attempt", "name eq 'Alice' --", "", true},
+		{"Injection - SQL Concatenation Attempt", "name eq 'Alice' || 'Bob'", "", true},
+
+		{"Injection - OR Without Right Side", "name eq 'Alice' or", "", true},
+		{"Injection - AND Without Right Side", "name eq 'Alice' and", "", true},
+		{"Injection - NOT Without Operand", "not", "", true},
+
+		{"Injection - Empty IN List", "color in ()", "", true},
+		{"Injection - IN with Boolean", "color in (true, false)", "", true},
+		{"Injection - IN with NULL", "color in (null, 'red')", "", true},
+
+		{"Injection - Quoted Field Name", "'name' eq 'Alice'", "", true},
+		{"Injection - SQL Keyword as Field", "SELECT eq 'Alice'", "", true},
+
+		{"Injection - Excessive Nesting", "(((((((((((name eq 'Alice')))))))))))", "", true},
+
+		{"Injection - Boolean Always True", "name eq 'Alice' or true eq true", "", true},
+		{"Injection - Boolean Always False", "name eq 'Alice' and false eq false", "", true},
+		{"Injection - Numeric Always True", "age gt 30 or 1 eq 1", "", true},
+		{"Injection - NULL Always True", "age gt 30 or null eq null", "", true},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			sql, err := odatasql.Convert(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Convert(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			if tt.wantErr {
+				assert.Error(t, err, "Convert(%q) expected error", tt.input)
 				return
 			}
-			if sql != tt.expected {
-				t.Errorf("Convert(%q) = %q; want %q", tt.input, sql, tt.expected)
-			}
+
+			assert.NoError(t, err, "Convert(%q) did not expect an error", tt.input)
+			assert.Equal(t, tt.expected, sql, "Convert(%q) = %q, want %q", tt.input, sql, tt.expected)
 		})
 	}
 }

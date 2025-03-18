@@ -13,6 +13,8 @@ const (
 	sqlLe = "<="
 )
 
+const maxNestingDepth = 10
+
 // opMapping maps OData operators to SQL operators.
 var opMapping = map[string]string{
 	"eq": sqlEq,
@@ -47,7 +49,7 @@ type parser struct {
 // parse starts the parsing process and returns the root node of the AST.
 func parse(tokens []token) (Node, error) {
 	p := &parser{tokens: tokens}
-	node, err := p.parseExpression()
+	node, err := p.parseExpression(0)
 	if err != nil {
 		return nil, err
 	}
@@ -59,18 +61,22 @@ func parse(tokens []token) (Node, error) {
 
 // --- Recursive Descent Parsing ---
 
-func (p *parser) parseExpression() (Node, error) {
-	return p.parseOr()
+func (p *parser) parseExpression(depth int) (Node, error) {
+	return p.parseOr(depth)
 }
 
 // parseOr handles OR expressions: `<andExpr> OR <andExpr>`.
-func (p *parser) parseOr() (Node, error) {
-	left, err := p.parseAnd()
+func (p *parser) parseOr(depth int) (Node, error) {
+	left, err := p.parseAnd(depth)
 	if err != nil {
 		return nil, err
 	}
+
 	for p.match(tOpOr) {
-		right, err := p.parseAnd()
+		if p.isAtEnd() {
+			return nil, fmt.Errorf("expected expression after OR, but found end of input")
+		}
+		right, err := p.parseAnd(depth)
 		if err != nil {
 			return nil, err
 		}
@@ -80,13 +86,17 @@ func (p *parser) parseOr() (Node, error) {
 }
 
 // parseAnd handles AND expressions: `<notExpr> AND <notExpr>`.
-func (p *parser) parseAnd() (Node, error) {
-	left, err := p.parseNot()
+func (p *parser) parseAnd(depth int) (Node, error) {
+	left, err := p.parseNot(depth)
 	if err != nil {
 		return nil, err
 	}
 	for p.match(tOpAnd) {
-		right, err := p.parseNot()
+		if p.isAtEnd() {
+			return nil, fmt.Errorf("expected expression after AND, but found end of input")
+		}
+
+		right, err := p.parseNot(depth)
 		if err != nil {
 			return nil, err
 		}
@@ -96,24 +106,28 @@ func (p *parser) parseAnd() (Node, error) {
 }
 
 // parseNot handles NOT expressions: `NOT <primaryExpr>`.
-func (p *parser) parseNot() (Node, error) {
+func (p *parser) parseNot(depth int) (Node, error) {
 	if p.match(tOpNot) {
 		if p.isAtEnd() {
 			return nil, fmt.Errorf("invalid use of NOT: missing expression")
 		}
-		child, err := p.parseNot()
+		child, err := p.parseNot(depth)
 		if err != nil {
 			return nil, err
 		}
 		return &NotNode{child}, nil
 	}
-	return p.parsePrimary()
+	return p.parsePrimary(depth)
 }
 
 // parsePrimary handles parenthesized expressions and simple conditions.
-func (p *parser) parsePrimary() (Node, error) {
+func (p *parser) parsePrimary(depth int) (Node, error) {
+	if depth > maxNestingDepth {
+		return nil, fmt.Errorf("exceeded maximum nesting depth of %d", maxNestingDepth)
+	}
+
 	if p.match(tParenOpen) {
-		node, err := p.parseExpression()
+		node, err := p.parseExpression(depth + 1)
 		if err != nil {
 			return nil, err
 		}
@@ -133,8 +147,12 @@ func (p *parser) parseConditionOrIn() (Node, error) {
 
 	// Extract field name
 	fieldTok := p.current()
+	field := ToSnakeCase(fieldTok.val)
 	p.advance()
-	field := toSnakeCase(fieldTok.val)
+
+	if IsReservedSQLKeyword(field) {
+		return nil, fmt.Errorf("invalid field name: %q is a reserved SQL keyword", field)
+	}
 
 	// --- Handle IN Operator ---
 	if p.match(tOpIn) {
@@ -160,7 +178,7 @@ func (p *parser) parseConditionOrIn() (Node, error) {
 				return nil, fmt.Errorf("invalid value in IN list: %v", tok)
 			}
 
-			values = append(values, sanitizeValue(tok.val))
+			values = append(values, SanitizeValue(tok.val))
 			p.advance()
 
 			if !p.match(tComma) {
@@ -192,12 +210,12 @@ func (p *parser) parseConditionOrIn() (Node, error) {
 		return nil, fmt.Errorf("missing value after operator %q", opTok.val)
 	}
 	valTok := p.current()
-	if valTok.typ != tString && valTok.typ != tNumber && valTok.typ != tIdentifier {
+	if valTok.typ != tString && valTok.typ != tNumber && valTok.typ != tIdentifier && valTok.typ != tLiteral {
 		return nil, fmt.Errorf("invalid value: %v", valTok)
 	}
 	p.advance()
 
-	return &ConditionNode{Field: field, Op: sqlOp, Value: sanitizeValue(valTok.val)}, nil
+	return &ConditionNode{Field: field, Op: sqlOp, Value: SanitizeValue(valTok.val)}, nil
 }
 
 // --- Parser Helper Functions ---

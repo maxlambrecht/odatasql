@@ -10,6 +10,7 @@ type tokenType int
 
 const (
 	tIdentifier tokenType = iota
+	tLiteral
 	tString
 	tNumber
 	tParenOpen
@@ -91,6 +92,10 @@ func tokenize(input string) ([]token, error) {
 
 func classifyWord(w string) token {
 	lower := strings.ToLower(w)
+
+	if lower == "true" || lower == "false" || lower == "null" {
+		return token{tLiteral, lower}
+	}
 
 	if tokType, exists := keywordTokens[lower]; exists {
 		return token{tokType, lower}

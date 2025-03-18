@@ -5,7 +5,7 @@ precedence.
 
 ## 🔹 Usage
 
-```go
+```
 func main() {
     sql, err := odatasql.Convert("name eq 'Alice' and age gt 30")
     if err != nil {
@@ -38,3 +38,23 @@ go run examples/in_operator/in_operator.go
 go run examples/logical_operators/logical_operators.go
 go run examples/precedence/precedence.go
 ```
+
+## 🔒 Security: Injection Protection
+
+**ODataSQL** enforces strict validation to prevent SQL injection risks:
+
+- ✅ **Rejects Always-True Expressions**
+    - ❌ `"age gt 30 or true eq true"` (_Rejected_)
+    - ❌ `"name eq 'Alice' or 1 eq 1"` (_Rejected_)
+
+- ✅ **Ensures Valid Field Names**
+    - ❌ `"true eq false"` (_Rejected_)
+    - ❌ `"null eq null"` (_Rejected_)
+    - ❌ `"SELECT eq 'Alice'"` (_Rejected_)
+
+- ✅ **Preserves SQL Safety**
+    - Only **valid identifiers** can be used as field names.
+    - Strings, numbers, and booleans **cannot be misused** as field names.
+
+💡 **Note:** While ODataSQL ensures safe query generation, always apply **standard SQL security measures** in your
+database layer.

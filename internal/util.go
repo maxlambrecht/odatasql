@@ -9,13 +9,19 @@ import (
 
 var camelToSnakeRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 
-// toSnakeCase converts a camelCase or PascalCase string to snake_case.
-func toSnakeCase(s string) string {
+var reservedSQLKeywords = map[string]struct{}{
+	"select": {}, "insert": {}, "update": {}, "delete": {}, "drop": {}, "alter": {},
+	"from": {}, "where": {}, "join": {}, "order": {}, "group": {}, "having": {},
+	"limit": {}, "offset": {}, "union": {}, "except": {}, "intersect": {},
+}
+
+// ToSnakeCase converts a camelCase or PascalCase string to snake_case.
+func ToSnakeCase(s string) string {
 	return strings.ToLower(camelToSnakeRegex.ReplaceAllString(s, "${1}_${2}"))
 }
 
-// sanitizeValue returns a properly formatted SQL literal for a value.
-func sanitizeValue(value string) string {
+// SanitizeValue returns a properly formatted SQL literal for a value.
+func SanitizeValue(value string) string {
 	value = strings.TrimSpace(value)
 
 	// Check if the value is a number (integer or float)
@@ -38,4 +44,9 @@ func sanitizeValue(value string) string {
 
 	// Wrap in single quotes for SQL output
 	return fmt.Sprintf("'%s'", value)
+}
+
+func IsReservedSQLKeyword(s string) bool {
+	_, exists := reservedSQLKeywords[strings.ToLower(s)]
+	return exists
 }

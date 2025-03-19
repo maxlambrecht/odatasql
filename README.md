@@ -7,7 +7,7 @@ precedence.
 
 ```
 func main() {
-    sql, err := odatasql.Convert("name eq 'Alice' and age gt 30")
+    sql, err := odatasql.FilterToSQL("name eq 'Alice' and age gt 30")
     if err != nil {
         log.Fatal(err)
     }

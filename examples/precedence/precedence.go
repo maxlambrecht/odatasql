@@ -8,7 +8,7 @@ import (
 
 // Demonstrates how operator precedence and explicit parentheses are preserved.
 func main() {
-	sql, err := odatasql.Convert("not (age gt 25 and status eq 'active') or premium eq true")
+	sql, err := odatasql.FilterToSQL("not (age gt 25 and status eq 'active') or premium eq true")
 	if err != nil {
 		log.Fatal(err)
 	}

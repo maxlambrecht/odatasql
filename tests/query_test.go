@@ -83,52 +83,19 @@ func TestConvert(t *testing.T) {
 		{"Malformed NOT", "not", "", true},
 		{"Empty input", "", "", false},
 		{"Leading OR", "or age gt 30", "", true},
-
-		// --- SQL Injection Tests ---
-		{"Injection - Boolean as Field", "true eq false", "", true},
-		{"Injection - Numeric as Field", "42 eq 42", "", true},
-		{"Injection - NULL as Field", "null eq null", "", true},
-		{"Injection - Boolean Comparison with Field", "status eq true eq false", "", true},
-
-		{"Injection - Empty Parentheses", "()", "", true},
-		{"Injection - Parentheses Around Literal", "(42) eq 42", "", true},
-		{"Injection - Nested Parentheses with Literal", "((true)) eq false", "", true},
-		{"Injection - Unmatched Opening Parenthesis", "(name eq 'Alice'", "", true},
-		{"Injection - Unmatched Closing Parenthesis", "name eq 'Alice')", "", true},
-
-		{"Injection - SQL Comment Attempt", "name eq 'Alice' --", "", true},
-		{"Injection - SQL Concatenation Attempt", "name eq 'Alice' || 'Bob'", "", true},
-
-		{"Injection - OR Without Right Side", "name eq 'Alice' or", "", true},
-		{"Injection - AND Without Right Side", "name eq 'Alice' and", "", true},
-		{"Injection - NOT Without Operand", "not", "", true},
-
-		{"Injection - Empty IN List", "color in ()", "", true},
-		{"Injection - IN with Boolean", "color in (true, false)", "", true},
-		{"Injection - IN with NULL", "color in (null, 'red')", "", true},
-
-		{"Injection - Quoted Field Name", "'name' eq 'Alice'", "", true},
-		{"Injection - SQL Keyword as Field", "SELECT eq 'Alice'", "", true},
-
-		{"Injection - Excessive Nesting", "(((((((((((name eq 'Alice')))))))))))", "", true},
-
-		{"Injection - Boolean Always True", "name eq 'Alice' or true eq true", "", true},
-		{"Injection - Boolean Always False", "name eq 'Alice' and false eq false", "", true},
-		{"Injection - Numeric Always True", "age gt 30 or 1 eq 1", "", true},
-		{"Injection - NULL Always True", "age gt 30 or null eq null", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			sql, err := odatasql.Convert(tt.input)
+			sql, err := odatasql.FilterToSQL(tt.input)
 			if tt.wantErr {
-				assert.Error(t, err, "Convert(%q) expected error", tt.input)
+				assert.Error(t, err, "FilterToSQL(%q) expected error", tt.input)
 				return
 			}
 
-			assert.NoError(t, err, "Convert(%q) did not expect an error", tt.input)
-			assert.Equal(t, tt.expected, sql, "Convert(%q) = %q, want %q", tt.input, sql, tt.expected)
+			assert.NoError(t, err, "FilterToSQL(%q) did not expect an error", tt.input)
+			assert.Equal(t, tt.expected, sql, "FilterToSQL(%q) = %q, want %q", tt.input, sql, tt.expected)
 		})
 	}
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	sql, err := odatasql.Convert("color in ('red', 'blue') and category eq 'electronics'")
+	sql, err := odatasql.FilterToSQL("color in ('red', 'blue') and category eq 'electronics'")
 	if err != nil {
 		log.Fatal(err)
 	}

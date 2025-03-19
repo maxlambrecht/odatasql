@@ -16,6 +16,8 @@ func TestConvert(t *testing.T) {
 		expected string
 		wantErr  bool
 	}{
+		{"Empty input", "", "", false},
+
 		// --- Basic Comparisons ---
 		{"Basic eq", "name eq 'Bob'", "name = 'Bob'", false},
 		{"Basic ne", "status ne 'inactive'", "status != 'inactive'", false},
@@ -81,7 +83,6 @@ func TestConvert(t *testing.T) {
 		{"Unexpected token", "age gt 18 and or status eq 'active'", "", true},
 		{"Malformed IN clause", "color in 'red', 'blue')", "", true},
 		{"Malformed NOT", "not", "", true},
-		{"Empty input", "", "", false},
 		{"Leading OR", "or age gt 30", "", true},
 	}
 	for _, tt := range tests {

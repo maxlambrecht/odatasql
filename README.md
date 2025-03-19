@@ -39,22 +39,32 @@ go run examples/logical_operators/logical_operators.go
 go run examples/precedence/precedence.go
 ```
 
-## 🔒 Security: Injection Protection
+## **🔒 Security: SQL Injection Protection**
 
-**ODataSQL** enforces strict validation to prevent SQL injection risks:
+**ODataSQL** enforces strict validation to prevent SQL injection attacks and ensure safe query generation.
 
-- ✅ **Rejects Always-True Expressions**
-    - ❌ `"age gt 30 or true eq true"` (_Rejected_)
-    - ❌ `"name eq 'Alice' or 1 eq 1"` (_Rejected_)
+- **SQL Injection via Malicious Values**
+    - ❌ `"id eq '1; DROP TABLE users --'"`
+    - ❌ `"DROP TABLE users"`
 
-- ✅ **Ensures Valid Field Names**
-    - ❌ `"true eq false"` (_Rejected_)
-    - ❌ `"null eq null"` (_Rejected_)
-    - ❌ `"SELECT eq 'Alice'"` (_Rejected_)
+- **Always-True / Always-False Attacks**
+    - ❌ `"username eq 'admin' or true eq true"`
+    - ❌ `"age gt 30 or 1 eq 1"`
+    - ❌ `"status eq 'active' and false eq false"`
 
-- ✅ **Preserves SQL Safety**
-    - Only **valid identifiers** can be used as field names.
-    - Strings, numbers, and booleans **cannot be misused** as field names.
+- **Logical Operator & Parentheses Exploits**
+    - ❌ `"()"`, `"not"`, `"name eq 'Alice' or"`
+
+- **Dangerous SQL Syntax**
+    - ❌ `"name eq 'Alice' --"` (SQL comment injection)
+    - ❌ `"color in ()"` (Empty `IN` list)
+    - ❌ `"SELECT eq 'Alice'"` (Reserved SQL keyword as a field)
+
+#### **✅ How ODataSQL Ensures Safety:**
+
+- **Strict field validation** – Only valid identifiers allowed.
+- **Safe value handling** – Prevents misuse of SQL syntax.
+- **Input sanitization** – Blocks `;`, `--`, and comment injection.
 
 💡 **Note:** While ODataSQL ensures safe query generation, always apply **standard SQL security measures** in your
 database layer.

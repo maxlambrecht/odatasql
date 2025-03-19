@@ -1,7 +1,12 @@
-package internal
+package parser
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/maxlambrecht/odatasql/internal/ast"
 )
 
 const (
@@ -15,6 +20,14 @@ const (
 
 const maxNestingDepth = 10
 
+var camelToSnakeRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+
+var reservedSQLKeywords = map[string]struct{}{
+	"select": {}, "insert": {}, "update": {}, "delete": {}, "drop": {}, "alter": {},
+	"from": {}, "where": {}, "join": {}, "order": {}, "group": {}, "having": {},
+	"limit": {}, "offset": {}, "union": {}, "except": {}, "intersect": {},
+}
+
 // opMapping maps OData operators to SQL operators.
 var opMapping = map[string]string{
 	"eq": sqlEq,
@@ -25,13 +38,8 @@ var opMapping = map[string]string{
 	"le": sqlLe,
 }
 
-// validOperators is a set for quick operator validation.
-var validOperators = map[string]struct{}{
-	"eq": {}, "ne": {}, "gt": {}, "ge": {}, "lt": {}, "le": {},
-}
-
 // BuildAST converts an OData filter string into an AST by tokenizing and parsing it.
-func BuildAST(filter string) (Node, error) {
+func BuildAST(filter string) (ast.Node, error) {
 	tokens, err := tokenize(filter)
 	if err != nil {
 		return nil, fmt.Errorf("tokenization failed: %w", err)
@@ -47,7 +55,7 @@ type parser struct {
 }
 
 // parse starts the parsing process and returns the root node of the AST.
-func parse(tokens []token) (Node, error) {
+func parse(tokens []token) (ast.Node, error) {
 	p := &parser{tokens: tokens}
 	node, err := p.parseExpression(0)
 	if err != nil {
@@ -61,12 +69,19 @@ func parse(tokens []token) (Node, error) {
 
 // --- Recursive Descent Parsing ---
 
-func (p *parser) parseExpression(depth int) (Node, error) {
+func (p *parser) parseExpression(depth int) (ast.Node, error) {
+	if depth > maxNestingDepth {
+		return nil, fmt.Errorf("exceeded maximum nesting depth of %d", maxNestingDepth)
+	}
 	return p.parseOr(depth)
 }
 
 // parseOr handles OR expressions: `<andExpr> OR <andExpr>`.
-func (p *parser) parseOr(depth int) (Node, error) {
+func (p *parser) parseOr(depth int) (ast.Node, error) {
+	if depth > maxNestingDepth {
+		return nil, fmt.Errorf("exceeded maximum nesting depth of %d", maxNestingDepth)
+	}
+
 	left, err := p.parseAnd(depth)
 	if err != nil {
 		return nil, err
@@ -80,13 +95,17 @@ func (p *parser) parseOr(depth int) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &BinaryNode{opOr, left, right}
+		left = &ast.BinaryNode{Op: ast.OpOr, Left: left, Right: right}
 	}
 	return left, nil
 }
 
 // parseAnd handles AND expressions: `<notExpr> AND <notExpr>`.
-func (p *parser) parseAnd(depth int) (Node, error) {
+func (p *parser) parseAnd(depth int) (ast.Node, error) {
+	if depth > maxNestingDepth {
+		return nil, fmt.Errorf("exceeded maximum nesting depth of %d", maxNestingDepth)
+	}
+
 	left, err := p.parseNot(depth)
 	if err != nil {
 		return nil, err
@@ -100,13 +119,17 @@ func (p *parser) parseAnd(depth int) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &BinaryNode{opAnd, left, right}
+		left = &ast.BinaryNode{Op: ast.OpAnd, Left: left, Right: right}
 	}
 	return left, nil
 }
 
 // parseNot handles NOT expressions: `NOT <primaryExpr>`.
-func (p *parser) parseNot(depth int) (Node, error) {
+func (p *parser) parseNot(depth int) (ast.Node, error) {
+	if depth > maxNestingDepth {
+		return nil, fmt.Errorf("exceeded maximum nesting depth of %d", maxNestingDepth)
+	}
+
 	if p.match(tOpNot) {
 		if p.isAtEnd() {
 			return nil, fmt.Errorf("invalid use of NOT: missing expression")
@@ -115,13 +138,13 @@ func (p *parser) parseNot(depth int) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &NotNode{child}, nil
+		return &ast.NotNode{Child: child}, nil
 	}
 	return p.parsePrimary(depth)
 }
 
 // parsePrimary handles parenthesized expressions and simple conditions.
-func (p *parser) parsePrimary(depth int) (Node, error) {
+func (p *parser) parsePrimary(depth int) (ast.Node, error) {
 	if depth > maxNestingDepth {
 		return nil, fmt.Errorf("exceeded maximum nesting depth of %d", maxNestingDepth)
 	}
@@ -134,23 +157,23 @@ func (p *parser) parsePrimary(depth int) (Node, error) {
 		if !p.expect(tParenClose) {
 			return nil, fmt.Errorf("missing closing parenthesis")
 		}
-		return &ParenNode{Child: node}, nil
+		return &ast.ParenNode{Child: node}, nil
 	}
 	return p.parseConditionOrIn()
 }
 
 // parseConditionOrIn parses conditions like `field eq value` or `field in (value1, value2)`.
-func (p *parser) parseConditionOrIn() (Node, error) {
+func (p *parser) parseConditionOrIn() (ast.Node, error) {
 	if !p.check(tIdentifier) {
 		return nil, fmt.Errorf("expected field name, got %v", p.current())
 	}
 
 	// Extract field name
 	fieldTok := p.current()
-	field := ToSnakeCase(fieldTok.val)
+	field := toSnakeCase(fieldTok.val)
 	p.advance()
 
-	if IsReservedSQLKeyword(field) {
+	if isReservedSQLKeyword(field) {
 		return nil, fmt.Errorf("invalid field name: %q is a reserved SQL keyword", field)
 	}
 
@@ -178,7 +201,12 @@ func (p *parser) parseConditionOrIn() (Node, error) {
 				return nil, fmt.Errorf("invalid value in IN list: %v", tok)
 			}
 
-			values = append(values, SanitizeValue(tok.val))
+			sanitizedValue, err := validateAndSanitizeValue(tok.val)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value in condition: %w", err)
+			}
+
+			values = append(values, sanitizedValue)
 			p.advance()
 
 			if !p.match(tComma) {
@@ -190,7 +218,7 @@ func (p *parser) parseConditionOrIn() (Node, error) {
 			return nil, fmt.Errorf("missing closing parenthesis in IN list")
 		}
 
-		return &InNode{Field: field, Values: values}, nil
+		return &ast.InNode{Field: field, Values: values}, nil
 	}
 
 	// --- Handle Simple Binary Condition ---
@@ -215,7 +243,12 @@ func (p *parser) parseConditionOrIn() (Node, error) {
 	}
 	p.advance()
 
-	return &ConditionNode{Field: field, Op: sqlOp, Value: SanitizeValue(valTok.val)}, nil
+	sanitizedValue, err := validateAndSanitizeValue(valTok.val)
+	if err != nil {
+		return nil, fmt.Errorf("invalid value in condition: %w", err)
+	}
+
+	return &ast.ConditionNode{Field: field, Op: sqlOp, Value: sanitizedValue}, nil
 }
 
 // --- Parser Helper Functions ---
@@ -258,8 +291,55 @@ func (p *parser) expect(tt tokenType) bool {
 	return false
 }
 
-// isValidOperator checks if an operator is valid.
+// validateAndSanitizeValue returns a properly formatted SQL literal for a value.
+func validateAndSanitizeValue(value string) (string, error) {
+	value = strings.TrimSpace(value)
+
+	// Allow valid numeric values without quotes
+	if _, err := strconv.Atoi(value); err == nil {
+		return value, nil
+	}
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return value, nil
+	}
+
+	lower := strings.ToLower(value)
+
+	// Prevent SQL injection attempts by blocking dangerous SQL characters and keywords
+	bannedPatterns := []string{";", "--", "/*", "*/"}
+	for _, pattern := range bannedPatterns {
+		if strings.Contains(lower, pattern) {
+			return "", fmt.Errorf("invalid input detected: %q", value)
+		}
+	}
+
+	if isReservedSQLKeyword(lower) {
+		return "", fmt.Errorf("invalid input detected: %q is a reserved SQL keyword", value)
+	}
+
+	// Allow SQL booleans and NULL as-is (without quotes)
+	if lower == "true" || lower == "false" || lower == "null" {
+		return lower, nil
+	}
+
+	// Sanitize string values: Escape single quotes inside the value
+	value = strings.Trim(value, "'")             // Remove surrounding single quotes
+	value = strings.ReplaceAll(value, "'", "''") // Escape inner single quotes
+
+	// Wrap in single quotes for safe SQL usage
+	return fmt.Sprintf("'%s'", value), nil
+}
+
+func toSnakeCase(s string) string {
+	return strings.ToLower(camelToSnakeRegex.ReplaceAllString(s, "${1}_${2}"))
+}
+
+func isReservedSQLKeyword(s string) bool {
+	_, exists := reservedSQLKeywords[strings.ToLower(s)]
+	return exists
+}
+
 func isValidOperator(op string) bool {
-	_, exists := validOperators[op]
+	_, exists := opMapping[op]
 	return exists
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestConvert(t *testing.T) {
+func TestFilterToSQL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -42,7 +42,6 @@ func TestConvert(t *testing.T) {
 		{"IN with strings", "color in ('red', 'blue')", "color IN ('red', 'blue')", false},
 		{"IN with numbers", "age in (20, 25, 30)", "age IN (20, 25, 30)", false},
 		{"IN with single value", "color in ('red')", "color IN ('red')", false},
-		{"Malformed IN (empty)", "color in ()", "", true},
 
 		// --- Quoting and String Literals ---
 		{"String with spaces", "name eq 'John Doe'", "name = 'John Doe'", false},
@@ -84,6 +83,8 @@ func TestConvert(t *testing.T) {
 		{"Malformed IN clause", "color in 'red', 'blue')", "", true},
 		{"Malformed NOT", "not", "", true},
 		{"Leading OR", "or age gt 30", "", true},
+		{"IN empty set", "color in ()", "", true},
+		{"Reserved word", "drop eq 'value'", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

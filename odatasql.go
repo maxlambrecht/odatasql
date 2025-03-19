@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/maxlambrecht/odatasql/internal"
+	"github.com/maxlambrecht/odatasql/internal/parser"
 )
 
 // FilterToSQL transforms an OData filter string into a SQL WHERE clause.
@@ -24,7 +24,7 @@ func FilterToSQL(filter string) (string, error) {
 		return "", nil
 	}
 
-	ast, err := internal.BuildAST(filter)
+	ast, err := parser.BuildAST(filter)
 	if err != nil {
 		return "", fmt.Errorf("invalid OData filter %q: %w", filter, err)
 	}

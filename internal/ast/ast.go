@@ -1,4 +1,4 @@
-package internal
+package ast
 
 import (
 	"fmt"
@@ -6,10 +6,10 @@ import (
 )
 
 const (
-	opAnd = "AND"
-	opOr  = "OR"
-	opNot = "NOT"
-	opIn  = "IN"
+	OpAnd = "AND"
+	OpOr  = "OR"
+	OpNot = "NOT"
+	OpIn  = "IN"
 )
 
 // Node represents any part of the parsed expression.
@@ -45,9 +45,9 @@ func (n *NotNode) ToSQL(level int) string {
 	child := n.Child.ToSQL(level + 1)
 	// For a NOT node, always add parentheses for nested expressions.
 	if level > 0 {
-		return fmt.Sprintf("(%s %s)", opNot, child)
+		return fmt.Sprintf("(%s %s)", OpNot, child)
 	}
-	return fmt.Sprintf("%s %s", opNot, child)
+	return fmt.Sprintf("%s %s", OpNot, child)
 }
 
 // ConditionNode represents a simple binary condition like "field = value".
@@ -65,8 +65,8 @@ type InNode struct {
 	Values []string
 }
 
-func (i *InNode) ToSQL(_ int) string {
-	return fmt.Sprintf("%s %s (%s)", i.Field, opIn, strings.Join(i.Values, ", "))
+func (i *InNode) ToSQL(int) string {
+	return fmt.Sprintf("%s %s (%s)", i.Field, OpIn, strings.Join(i.Values, ", "))
 }
 
 // ParenNode represents an expression that was explicitly parenthesized in the input.
@@ -74,7 +74,7 @@ type ParenNode struct {
 	Child Node
 }
 
-func (p *ParenNode) ToSQL(level int) string {
+func (p *ParenNode) ToSQL(int) string {
 	// Always emit the surrounding parentheses regardless of level.
 	// We call Child.ToSQL with level 0 so that inner nodes don't remove their grouping.
 	return fmt.Sprintf("(%s)", p.Child.ToSQL(0))

@@ -7,12 +7,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// --- SQL Injection Prevention Tests ---
-func TestConvert_Injection(t *testing.T) {
+func TestFilterToSQL_Injection(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
 	}{
+		// --- Malicious SQL Injection Attempts ---
+		{"SQL Injection: DROP TABLE via Value", "id eq '1; DROP TABLE users --'"},
+		{"SQL Injection: Standalone Statement", "1; DROP TABLE users --'"},
+		{"SQL Injection: Direct DROP TABLE", "DROP TABLE users"},
+
 		// --- Boolean, Numeric, and NULL Injection Attempts ---
 		{"Boolean as Field", "true eq false"},
 		{"Numeric as Field", "42 eq 42"},
@@ -69,6 +75,8 @@ func TestConvert_Injection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := odatasql.FilterToSQL(tt.input)
 
 			assert.Error(t, err, "Expected an error for input: %q", tt.input)
